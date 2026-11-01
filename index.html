@@ -1,0 +1,940 @@
+---
+---
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E'Angelo — flight recorder edition 📼</title>
+<meta name="description" content="E'Angelo's homepage, styled like a tapedeck README: record once, replay forever, diff what drifted.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📼</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* ============ tokens ============ */
+:root{
+  --bg:#0a0a0d; --panel:#121218; --panel2:#17171f; --term:#0d0d12;
+  --border:#26262e; --border2:#33333f;
+  --text:#d8d8e0; --muted:#8f8f9d; --dim:#5f5f6b;
+  --amber:#ffb454; --green:#7ee787; --red:#ff5c5c; --blue:#79c0ff;
+  --cyan:#5eead4; --yellow:#f2d060;
+  --accent:var(--amber);
+  --mono:"JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+}
+body.side-b{ --accent:var(--cyan); }
+*{ box-sizing:border-box }
+html{ scroll-behavior:smooth }
+@media (prefers-reduced-motion: reduce){ html{ scroll-behavior:auto } }
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--mono); font-size:15px; line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+body::before{ /* vignette */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:radial-gradient(1200px 600px at 50% -100px, rgba(255,180,84,.045), transparent 60%);
+}
+body::after{ /* scanlines */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:60;
+  background:repeating-linear-gradient(to bottom, rgba(255,255,255,.022) 0 1px, transparent 1px 3px);
+  mix-blend-mode:overlay;
+}
+::selection{ background:var(--accent); color:#111 }
+a{ color:var(--blue); text-decoration:none; border-bottom:1px dotted rgba(121,192,255,.4) }
+a:hover{ border-bottom-color:currentColor }
+code{ font-family:var(--mono) }
+.wrap{ max-width:880px; margin:0 auto; padding:0 20px; position:relative; z-index:1 }
+
+/* ============ tape progress line ============ */
+#tape-line{ position:fixed; top:0; left:0; height:3px; width:0; z-index:70;
+  background:linear-gradient(90deg, #3a2a18, var(--accent)); box-shadow:0 0 8px rgba(255,180,84,.5);
+  transition:width .1s linear }
+
+/* ============ header / cassette ============ */
+header{ padding:44px 0 10px; text-align:center }
+.cass-wrap{ perspective:1400px; display:flex; justify-content:center }
+#cassette{ width:min(640px, 92vw); height:auto; display:block; transition:transform .55s ease; }
+#cassette .reel{ transform-box:fill-box; transform-origin:center; animation:spin 2.6s linear infinite; animation-play-state:paused }
+body.playing #cassette .reel{ animation-play-state:running }
+body.mode-ff #cassette .reel{ animation-duration:.45s }
+body.mode-rew #cassette .reel{ animation-direction:reverse; animation-duration:.45s }
+@keyframes spin{ to{ transform:rotate(360deg) } }
+#led-rec{ opacity:.25 }
+body.recording #led-rec{ opacity:1; animation:blink 1s steps(1) infinite }
+#led-pwr{ opacity:.25 } body:not(.off) #led-pwr{ opacity:1 }
+#led-play{ opacity:.25 }
+body.playing #led-play{ opacity:1 }
+@keyframes blink{ 50%{ opacity:.15 } }
+
+/* badges */
+.badges{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:26px 0 8px }
+.badge{ display:inline-flex; align-items:stretch; border-radius:5px; overflow:hidden;
+  font-size:12px; line-height:1; border:1px solid var(--border2); background:#0e0e13 }
+.badge span{ padding:5px 8px; display:inline-flex; align-items:center; gap:4px }
+.badge .k{ background:#1c1c24; color:var(--muted) }
+.badge .v{ color:var(--green) }
+.badge.b-blue .v{ color:var(--blue) } .badge.b-amber .v{ color:var(--amber) }
+.badge.b-purple .v{ color:#c4a5ff } .badge.b-red .v{ color:var(--red) }
+a.badge:hover{ border-color:var(--accent) }
+.badge .dot{ width:6px; height:6px; border-radius:50%; background:var(--green); box-shadow:0 0 6px var(--green) }
+
+h1.lead{ font-size:17px; font-weight:500; margin:26px auto 6px; max-width:760px; line-height:1.8 }
+h1.lead b{ color:var(--accent); font-weight:700 }
+blockquote.story{
+  margin:18px auto; max-width:760px; text-align:left;
+  border-left:3px solid var(--accent); padding:10px 18px; color:var(--muted);
+  background:linear-gradient(90deg, rgba(255,180,84,.05), transparent 70%);
+}
+blockquote.story b{ color:var(--text) }
+
+nav.toc{ margin:20px 0 6px; color:var(--dim); font-size:13.5px }
+nav.toc a{ color:var(--muted); border:none }
+nav.toc a:hover{ color:var(--accent) }
+nav.toc .sep{ color:var(--dim) }
+
+/* ============ deck transport ============ */
+.deck{
+  display:flex; flex-wrap:wrap; gap:18px; align-items:center; justify-content:space-between;
+  background:linear-gradient(180deg, var(--panel2), var(--panel));
+  border:1px solid var(--border); border-radius:14px; padding:14px 18px; margin:26px 0 8px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 8px 30px rgba(0,0,0,.35);
+}
+.transport{ display:flex; gap:8px; flex-wrap:wrap }
+.tbtn{
+  font-family:var(--mono); font-size:12.5px; letter-spacing:.5px;
+  color:var(--text); background:#1b1b23; border:1px solid var(--border2);
+  border-bottom-width:3px; border-radius:8px; padding:9px 13px; cursor:pointer;
+  display:inline-flex; align-items:center; gap:7px; transition:transform .05s, border-color .15s;
+}
+.tbtn:hover{ border-color:var(--accent) }
+.tbtn:active{ transform:translateY(2px); border-bottom-width:1px }
+.tbtn .led{ width:7px; height:7px; border-radius:50%; background:#3a3a44; transition:.15s }
+.tbtn[data-mode=play].active .led, .tbtn[data-mode=ff].active .led, .tbtn[data-mode=rew].active .led{
+  background:var(--green); box-shadow:0 0 8px var(--green) }
+.tbtn.rec-arm .led{ background:var(--red); box-shadow:0 0 8px var(--red); animation:blink 1s steps(1) infinite }
+.tbtn .sym{ font-size:13px }
+.tbtn[data-mode=rec] .sym{ color:var(--red) }
+.tbtn[data-mode=play] .sym{ color:var(--green) }
+.tbtn[data-mode=ff] .sym, .tbtn[data-mode=rew] .sym{ color:var(--amber) }
+
+.counter{ text-align:center; min-width:96px }
+.counter .digits{
+  font-size:22px; letter-spacing:4px; color:#ffb3b3; background:#150d0d;
+  border:1px solid #3a2020; border-radius:6px; padding:4px 10px; text-shadow:0 0 8px rgba(255,92,92,.55);
+}
+.counter.blink .digits{ animation:blink .5s steps(1) 4 }
+.counter label{ display:block; font-size:10px; color:var(--dim); letter-spacing:2px; margin-top:4px }
+
+.vu{ display:flex; flex-direction:column; gap:5px }
+.vu-row{ display:flex; align-items:center; gap:3px }
+.vu-row i{ width:9px; height:13px; border-radius:2px; background:#1d1d25 }
+.vu-row i.on{ background:var(--green); box-shadow:0 0 5px rgba(126,231,135,.6) }
+.vu-row i.on.mid{ background:var(--yellow); box-shadow:0 0 5px rgba(242,208,96,.6) }
+.vu-row i.on.hot{ background:var(--red); box-shadow:0 0 5px rgba(255,92,92,.7) }
+.vu-row .ch{ font-size:10px; color:var(--dim); margin-left:5px; width:10px }
+.deck-hint{ font-size:11px; color:var(--dim); margin:6px 2px 0; text-align:left }
+kbd{ border:1px solid var(--border2); border-bottom-width:2px; border-radius:4px; padding:0 5px; font-size:11px; background:#17171f; color:var(--muted) }
+
+/* ============ sections ============ */
+section{ margin:56px 0 }
+h2{ font-size:19px; font-weight:700; margin:0 0 14px; letter-spacing:.3px }
+h2::before{ content:"## "; color:var(--dim); font-weight:400 }
+h2 a.z{ color:transparent; margin-left:8px; border:none; transition:color .15s }
+h2:hover a.z{ color:var(--dim) }
+h3{ font-size:15px; font-weight:500; color:var(--muted); margin:22px 0 8px }
+.reveal{ opacity:0; transform:translateY(14px); transition:opacity .55s ease, transform .55s ease }
+.reveal.in{ opacity:1; transform:none }
+@media (prefers-reduced-motion: reduce){ .reveal{ opacity:1; transform:none; transition:none } }
+
+/* terminals */
+.term{ background:var(--term); border:1px solid var(--border); border-radius:10px; overflow:hidden; margin:14px 0 }
+.term-bar{ display:flex; align-items:center; gap:6px; padding:8px 12px; background:#14141b; border-bottom:1px solid var(--border) }
+.term-bar .d{ width:10px; height:10px; border-radius:50% }
+.term-bar .d:nth-child(1){ background:#ff5f57 } .term-bar .d:nth-child(2){ background:#febc2e } .term-bar .d:nth-child(3){ background:#28c840 }
+.term-bar .t{ margin-left:8px; font-size:11px; color:var(--dim) }
+.term-body{ padding:14px 16px; font-size:13.5px; line-height:1.75; overflow-x:auto }
+.term-body pre{ margin:0; font-family:var(--mono) }
+.tl{ white-space:pre; min-height:1.2em }
+.tl .p{ color:var(--amber); font-weight:700 }
+.tl .out{ color:var(--text) }
+.tl .cmt{ color:var(--dim) }
+.tl .ok{ color:var(--green) }
+.tl .warn{ color:var(--amber) }
+.tl .err{ color:var(--red) }
+.tl .later{ visibility:hidden }
+.tl.done .later{ visibility:visible }
+.typing::after{ content:"▊"; color:var(--accent); animation:blink 1s steps(1) infinite }
+
+/* tables (github markdown style) */
+.md{ border:1px solid var(--border); border-radius:10px; overflow:hidden }
+.md table{ width:100%; border-collapse:collapse; font-size:13.5px }
+.md th, .md td{ padding:9px 14px; border-bottom:1px solid var(--border); text-align:left }
+.md tr:last-child td{ border-bottom:none }
+.md th{ background:#14141b; color:var(--muted); font-weight:500 }
+.md td:first-child{ color:var(--text) }
+.md .yes{ color:var(--green) } .md .no{ color:var(--red) } .md .mid{ color:var(--yellow) }
+.table-scroll{ overflow-x:auto }
+
+/* tape suite cards */
+.suite{ display:grid; grid-template-columns:repeat(3, 1fr); gap:14px }
+@media (max-width:760px){ .suite{ grid-template-columns:1fr } }
+.tape-card{
+  background:linear-gradient(180deg, var(--panel2), var(--panel));
+  border:1px solid var(--border); border-radius:12px; padding:16px 16px 14px; position:relative;
+  transition:border-color .2s, transform .2s;
+}
+.tape-card:hover{ border-color:var(--accent); transform:translateY(-2px) }
+.tape-card::before{ /* cassette screws */
+  content:""; position:absolute; top:8px; left:8px; width:5px; height:5px; border-radius:50%;
+  background:#2c2c36; box-shadow:calc(100% + 0px) 0 #2c2c36;
+}
+.tape-card h3{ margin:0 0 4px; font-size:15.5px; color:var(--text) }
+.tape-card h3 .sym{ color:var(--red) }
+.tape-card .role{ font-size:11.5px; color:var(--accent); letter-spacing:.5px; margin-bottom:8px }
+.tape-card p{ font-size:12.8px; color:var(--muted); margin:0 0 12px; line-height:1.7 }
+.tape-card p b{ color:var(--text); font-weight:500 }
+.install{ display:flex; align-items:center; gap:8px; background:var(--term); border:1px solid var(--border); border-radius:7px; padding:7px 10px }
+.install code{ font-size:12px; color:var(--green); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.copy{ font-family:var(--mono); font-size:10.5px; color:var(--muted); background:#1b1b23; border:1px solid var(--border2); border-radius:5px; padding:3px 8px; cursor:pointer }
+.copy:hover{ color:var(--accent); border-color:var(--accent) }
+.copy.ok{ color:var(--green); border-color:var(--green) }
+.card-tags{ display:flex; gap:6px; margin-top:10px; flex-wrap:wrap }
+.tag{ font-size:10.5px; color:var(--dim); border:1px solid var(--border); border-radius:99px; padding:2px 8px }
+
+/* nimbus rack */
+.rack{ border:1px solid var(--border); border-radius:10px; overflow:hidden }
+.spine{
+  display:flex; align-items:center; gap:14px; padding:11px 16px;
+  border-bottom:1px solid var(--border); background:var(--panel);
+  transition:background .15s, transform .15s; position:relative;
+}
+.spine:last-child{ border-bottom:none }
+.spine:hover{ background:var(--panel2); transform:translateX(4px) }
+.spine::before{ content:""; width:6px; height:26px; border-radius:2px; background:var(--accent); opacity:.75; flex:none }
+.spine .nm{ font-weight:700; font-size:14px; min-width:150px }
+.spine .ds{ color:var(--muted); font-size:12.8px; flex:1 }
+.spine .go{ color:var(--dim); font-size:12px; border:none }
+.spine:hover .go{ color:var(--accent) }
+@media (max-width:640px){ .spine{ flex-wrap:wrap; gap:6px } .spine .nm{ min-width:0 } }
+
+/* flow */
+.flow{ display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; margin:6px 0 }
+.node{ border:1px solid var(--border2); background:var(--panel); border-radius:8px; padding:6px 12px; font-size:12.5px }
+.node.hot{ border-color:var(--accent); color:var(--accent) }
+.arrow{ color:var(--dim) }
+.flow-note{ color:var(--dim); font-size:12px; margin-top:10px }
+
+/* boundaries */
+ul.boundary{ list-style:none; padding:0; margin:0 }
+ul.boundary li{ padding:10px 0 10px 26px; position:relative; border-bottom:1px dashed var(--border); color:var(--muted); font-size:13.5px; line-height:1.8 }
+ul.boundary li:last-child{ border-bottom:none }
+ul.boundary li::before{ content:"–"; position:absolute; left:4px; color:var(--accent) }
+ul.boundary b{ color:var(--text); font-weight:500 }
+
+/* side B now playing */
+.playing-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px }
+@media (max-width:700px){ .playing-grid{ grid-template-columns:1fr } }
+.np{ background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:13px 15px; display:flex; gap:12px; align-items:flex-start; transition:border-color .2s }
+.np:hover{ border-color:var(--accent) }
+.np .ico{ font-size:18px; flex:none; filter:saturate(.9) }
+.np .tt{ font-weight:700; font-size:13.5px }
+.np .tt a{ color:var(--text); border-bottom:1px dotted var(--border2) }
+.np .ds{ font-size:12.3px; color:var(--muted); margin-top:2px; line-height:1.65 }
+.np .wip{ font-size:10px; color:var(--yellow); border:1px solid rgba(242,208,96,.35); border-radius:99px; padding:1px 7px; margin-left:6px; white-space:nowrap }
+
+/* roadmap checkboxes */
+ul.road{ list-style:none; padding:0; margin:0 }
+ul.road li{ display:flex; gap:10px; align-items:baseline; padding:7px 0; color:var(--muted); font-size:13.5px }
+ul.road input[type=checkbox]{ accent-color:var(--green); transform:translateY(2px) }
+ul.road li.done{ text-decoration:line-through; text-decoration-color:rgba(126,231,135,.4); color:var(--dim) }
+
+/* rec log panel */
+#rec-panel{
+  position:fixed; right:16px; bottom:16px; z-index:80; width:330px; max-width:calc(100vw - 32px);
+  background:rgba(13,13,18,.94); border:1px solid rgba(255,92,92,.4); border-radius:10px;
+  box-shadow:0 10px 40px rgba(0,0,0,.5); display:none; overflow:hidden; backdrop-filter:blur(4px);
+}
+#rec-panel.show{ display:block }
+#rec-panel .rp-head{ display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid rgba(255,92,92,.25); font-size:11.5px; color:var(--red); white-space:nowrap }
+#rec-panel .rp-head .rd{ width:8px; height:8px; border-radius:50%; background:var(--red); animation:blink 1s steps(1) infinite; flex:none }
+#rec-panel .rp-head .note{ margin-left:auto; color:var(--dim); font-size:9.5px; overflow:hidden; text-overflow:ellipsis }
+#rec-log{ padding:8px 12px 10px; font-size:10.8px; color:var(--muted); max-height:150px; overflow-y:auto }
+#rec-log div{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+
+/* toast */
+#toast{
+  position:fixed; left:50%; bottom:26px; transform:translate(-50%, 16px); z-index:90;
+  background:#14141b; color:var(--accent); border:1px solid var(--accent); border-radius:8px;
+  padding:8px 16px; font-size:12.5px; opacity:0; pointer-events:none; transition:.25s;
+  box-shadow:0 6px 24px rgba(0,0,0,.45);
+}
+#toast.show{ opacity:1; transform:translate(-50%, 0) }
+
+footer{ margin:80px 0 60px; text-align:center; color:var(--dim); font-size:12.5px; line-height:2 }
+footer a{ color:var(--muted) }
+footer .keys{ margin-top:6px }
+</style>
+</head>
+<body class="off">
+<div id="tape-line"></div>
+
+<div class="wrap">
+
+<!-- ================= HEADER : the cassette ================= -->
+<header id="deck">
+  <div class="cass-wrap">
+    <svg id="cassette" viewBox="0 0 640 400" role="img" aria-label="Cassette tape labeled E'Angelo personal homepage">
+      <defs>
+        <linearGradient id="bodyG" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#24242e"/><stop offset="1" stop-color="#16161d"/>
+        </linearGradient>
+      </defs>
+      <!-- body -->
+      <rect x="16" y="16" width="608" height="368" rx="20" fill="url(#bodyG)" stroke="#3a3a46" stroke-width="2"/>
+      <!-- label -->
+      <rect x="44" y="40" width="552" height="216" rx="12" fill="#efe6d0"/>
+      <path d="M44,52 a12,12 0 0 1 12,-12 h528 a12,12 0 0 1 12,12 v34 h-552 z" id="stripeTop" style="fill:var(--accent)"/>
+      <text x="320" y="72" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="21" font-weight="700" letter-spacing="7" fill="#141414">E'ANGELO</text>
+      <text x="320" y="100" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="12" letter-spacing="1.5" fill="#4a4a52">personal homepage · flight recorder edition</text>
+      <line x1="70" y1="112" x2="570" y2="112" stroke="#c9bfa8" stroke-width="1"/>
+      <line x1="70" y1="238" x2="570" y2="238" stroke="#c9bfa8" stroke-width="1"/>
+      <text x="320" y="252" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11.5" letter-spacing="1" fill="#6a6a72" id="lblSub">record once · replay forever · diff what drifted</text>
+      <!-- side dot -->
+      <circle id="sideDotBg" cx="565" cy="94" r="15" style="fill:var(--accent)"/>
+      <text id="sideDot" x="565" y="99" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="15" font-weight="700" fill="#141414">A</text>
+      <!-- window -->
+      <rect x="168" y="118" width="304" height="104" rx="10" fill="#0b0b0f" stroke="#2c2c36" stroke-width="2"/>
+      <!-- tape wind circles -->
+      <circle id="tapeL" cx="226" cy="170" r="42" fill="#2b2116"/>
+      <circle id="tapeR" cx="414" cy="170" r="42" fill="#2b2116"/>
+      <!-- tape line + guides -->
+      <line x1="192" y1="211" x2="448" y2="211" stroke="#2b2116" stroke-width="5"/>
+      <circle cx="192" cy="211" r="7" fill="#3c3c48"/>
+      <circle cx="448" cy="211" r="7" fill="#3c3c48"/>
+      <!-- reels -->
+      <g class="reel">
+        <circle cx="226" cy="170" r="35" fill="#e9e9ef" stroke="#a9a9b8" stroke-width="2"/>
+        <g stroke="#9a9aae" stroke-width="8" stroke-linecap="round">
+          <line x1="226" y1="146" x2="226" y2="156"/>
+          <line x1="226" y1="184" x2="226" y2="194"/>
+          <line x1="206" y1="158" x2="215" y2="163"/>
+          <line x1="237" y1="177" x2="246" y2="182"/>
+          <line x1="206" y1="182" x2="215" y2="177"/>
+          <line x1="237" y1="163" x2="246" y2="158"/>
+        </g>
+        <circle cx="226" cy="170" r="11" fill="#0b0b0f"/>
+      </g>
+      <g class="reel">
+        <circle cx="414" cy="170" r="35" fill="#e9e9ef" stroke="#a9a9b8" stroke-width="2"/>
+        <g stroke="#9a9aae" stroke-width="8" stroke-linecap="round">
+          <line x1="414" y1="146" x2="414" y2="156"/>
+          <line x1="414" y1="184" x2="414" y2="194"/>
+          <line x1="394" y1="158" x2="403" y2="163"/>
+          <line x1="425" y1="177" x2="434" y2="182"/>
+          <line x1="394" y1="182" x2="403" y2="177"/>
+          <line x1="425" y1="163" x2="434" y2="158"/>
+        </g>
+        <circle cx="414" cy="170" r="11" fill="#0b0b0f"/>
+      </g>
+      <!-- head access trapezoid -->
+      <path d="M210,300 L430,300 L462,354 L178,354 Z" fill="#0e0e13" stroke="#2c2c36" stroke-width="2"/>
+      <circle cx="248" cy="328" r="11" fill="#050507" stroke="#2c2c36"/>
+      <circle cx="392" cy="328" r="11" fill="#050507" stroke="#2c2c36"/>
+      <rect x="296" y="316" width="48" height="24" rx="4" fill="#050507" stroke="#2c2c36"/>
+      <!-- LEDs -->
+      <circle id="led-pwr" cx="76" cy="286" r="6" fill="#7ee787" style="filter:drop-shadow(0 0 4px #7ee787)"/>
+      <circle id="led-play" cx="104" cy="286" r="6" fill="#ffb454" style="filter:drop-shadow(0 0 4px #ffb454)"/>
+      <circle id="led-rec" cx="132" cy="286" r="6" fill="#ff5c5c" style="filter:drop-shadow(0 0 4px #ff5c5c)"/>
+      <text x="150" y="290" font-family="JetBrains Mono, monospace" font-size="9" fill="#5a5a66" letter-spacing="1">PWR PLAY REC</text>
+      <text x="566" y="290" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="9" fill="#5a5a66" letter-spacing="1">NORMAL BIAS · 90MIN</text>
+      <!-- screws -->
+      <g fill="#101016" stroke="#3a3a46">
+        <circle cx="34" cy="34" r="6"/><circle cx="606" cy="34" r="6"/>
+        <circle cx="34" cy="366" r="6"/><circle cx="606" cy="366" r="6"/>
+      </g>
+      <g stroke="#3a3a46" stroke-width="1.5">
+        <line x1="30" y1="34" x2="38" y2="34"/><line x1="34" y1="30" x2="34" y2="38"/>
+        <line x1="602" y1="34" x2="610" y2="34"/><line x1="606" y1="30" x2="606" y2="38"/>
+        <line x1="30" y1="366" x2="38" y2="366"/><line x1="34" y1="362" x2="34" y2="370"/>
+        <line x1="602" y1="366" x2="610" y2="366"/><line x1="606" y1="362" x2="606" y2="370"/>
+      </g>
+    </svg>
+  </div>
+
+  <!-- badges -->
+  <div class="badges" aria-label="badges">
+    <span class="badge"><span class="k"><span class="dot"></span> status</span><span class="v">recording</span></span>
+    <a class="badge b-blue" href="https://pypi.org/project/tapedeck-llm/" target="_blank" rel="noopener"><span class="k">tapedeck</span><span class="v">v0.2.0 · PyPI</span></a>
+    <a class="badge b-blue" href="https://pypi.org/project/mcptape/" target="_blank" rel="noopener"><span class="k">mcptape</span><span class="v">v0.1.0 · PyPI</span></a>
+    <a class="badge b-blue" href="https://www.npmjs.com/package/@eange1o/mocktape" target="_blank" rel="noopener"><span class="k">mocktape</span><span class="v">v1.0.1 · npm</span></a>
+    <span class="badge"><span class="k">dependencies</span><span class="v">0</span></span>
+    <span class="badge"><span class="k">trackers</span><span class="v">0</span></span>
+    <span class="badge b-amber"><span class="k">side</span><span class="v" id="sideBadge">A</span></span>
+  </div>
+
+  <h1 class="lead">
+    <b>E'Angelo</b> is a <b>flight recorder</b> for his own curiosity —
+    record once (REC ⏺), replay it forever offline (PLAY ▶),
+    and diff exactly where the understanding drifted (⏩).
+  </h1>
+
+  <blockquote class="story">
+    <b>每个造过东西的人都经历过同一个深夜：昨天还好好的，今天改了一行，就再也跑不起来了。</b>
+    于是我把「记录—重放—对比」做成了磁带三件套，把推理引擎、数据库、Git、区块链从零手写了一遍 ——
+    因为 <b>“我想看看它内部到底是怎么运作的”</b> 是软件工程里最贵的一句话。
+    本页无框架、无构建、无依赖 —— 一个你可以直接 <code>cat</code> 的 HTML 文件。
+  </blockquote>
+
+  <nav class="toc" aria-label="sections">
+    <a href="#deck">the deck</a> <span class="sep">·</span>
+    <a href="#quick">30 seconds</a> <span class="sep">·</span>
+    <a href="#runs">tapedeck ls</a> <span class="sep">·</span>
+    <a href="#how">how it works</a> <span class="sep">·</span>
+    <a href="#suite">the tape suite</a> <span class="sep">·</span>
+    <a href="#nimbus">nimbus rack</a> <span class="sep">·</span>
+    <a href="#posts">transcripts</a> <span class="sep">·</span>
+    <a href="#why">why not a normal homepage</a> <span class="sep">·</span>
+    <a href="#boundaries">honest boundaries</a> <span class="sep">·</span>
+    <a href="#side-b">side B</a> <span class="sep">·</span>
+    <a href="#roadmap">roadmap</a>
+  </nav>
+
+  <!-- transport -->
+  <div class="deck" role="group" aria-label="tape transport controls">
+    <div class="transport">
+      <button class="tbtn" data-mode="rec" aria-pressed="false"><span class="led"></span><span class="sym">⏺</span>REC</button>
+      <button class="tbtn" data-mode="play" aria-pressed="false"><span class="led"></span><span class="sym">▶</span>PLAY</button>
+      <button class="tbtn" data-mode="stop"><span class="led"></span><span class="sym">■</span>STOP</button>
+      <button class="tbtn" data-mode="rew" aria-pressed="false"><span class="led"></span><span class="sym">⏪</span>REW</button>
+      <button class="tbtn" data-mode="ff" aria-pressed="false"><span class="led"></span><span class="sym">⏩</span>FF</button>
+      <button class="tbtn" id="eject"><span class="led"></span><span class="sym">⏏</span>EJECT</button>
+    </div>
+    <div class="deck-right" style="display:flex; gap:20px; align-items:center">
+      <div class="counter" id="counterBox">
+        <div class="digits" id="counter">0000</div>
+        <label>COUNTER</label>
+      </div>
+      <div class="vu" aria-hidden="true">
+        <div class="vu-row" id="vuL"></div>
+        <div class="vu-row" id="vuR"></div>
+      </div>
+    </div>
+  </div>
+  <div class="deck-hint">PLAY 会像磁带一样自动“播放”这一页 · 播到带尾自动翻面 · <kbd>space</kbd> 播放/停止 · <kbd>r</kbd> 录制 · <kbd>e</kbd> 翻面</div>
+</header>
+
+<main>
+
+<!-- ================= HERO TERMINAL ================= -->
+<section class="reveal" id="about">
+  <div class="term">
+    <div class="term-bar"><span class="d"></span><span class="d"></span><span class="d"></span><span class="t">eangelo@local — replay of a career · 80×24</span></div>
+    <div class="term-body" id="term-hero">
+      <div class="tl"><span class="p">$ </span><span class="out" data-text="whoami"></span></div>
+      <div class="tl"><span class="out" data-text="E'Angelo — builder of flight recorders & from-scratch engines."></span></div>
+      <div class="tl"><span class="p">$ </span><span class="out" data-text="cat MOTIVATION.md"></span></div>
+      <div class="tl"><span class="cmt" data-text="# it worked yesterday, you changed one line today,"></span></div>
+      <div class="tl"><span class="cmt" data-text="# and now it's broken. so: record once, replay forever."></span></div>
+      <div class="tl"><span class="p">$ </span><span class="out" data-text="uptime --session"></span></div>
+      <div class="tl"><span class="out" data-text="up "></span><span class="out later" id="uptime">00:00:00</span><span class="out later" data-text=" · cookies: 0 · uploads: 0 · everything local"></span></div>
+      <div class="tl"><span class="ok" data-text="[replayed 'EAngelo-v1': served 10 steps, 0 live calls, $0.00 spent]"></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 30 SECONDS ================= -->
+<section class="reveal" id="quick">
+  <h2>30 seconds <a class="z" href="#quick">#</a></h2>
+  <p style="color:var(--muted); font-size:13.5px">把整串命令贴进终端，你会得到逐字节一致的输出 —— 这也是这页 README 式主页的由来：</p>
+  <div class="term">
+    <div class="term-bar"><span class="d"></span><span class="d"></span><span class="d"></span><span class="t">quick start — real commands</span></div>
+    <div class="term-body" id="term-quick">
+      <div class="tl"><span class="p">$ </span><span class="out" data-text="git clone https://github.com/EAnge1o"></span><span class="cmt later">   # optional: read everything</span></div>
+      <div class="tl"><span class="p">$ </span><span class="out" data-text="pip install tapedeck-llm"></span><span class="cmt later">              # record your LLM agent</span></div>
+      <div class="tl"><span class="p">$ </span><span class="out" data-text="pip install mcptape"></span><span class="cmt later">                 # record any MCP server</span></div>
+      <div class="tl"><span class="p">$ </span><span class="out" data-text="npm i -D @eange1o/mocktape"></span><span class="cmt later">           # record your HTTP layer</span></div>
+      <div class="tl"><span class="out" data-text="# ...本页无需安装。按下 PLAY，继续往下听。"></span></div>
+      <div class="tl"><span class="ok" data-text="[4 commands, 3 registries, $0.00 spent]"></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= RUNS ================= -->
+<section class="reveal" id="runs">
+  <h2>tapedeck ls <a class="z" href="#runs">#</a></h2>
+  <p style="color:var(--muted); font-size:13.5px">把项目当作 run 来归档。真实输出风格，逐列对齐：</p>
+  <div class="term">
+    <div class="term-bar"><span class="d"></span><span class="d"></span><span class="d"></span><span class="t">tapedeck ls — all runs, newest first</span></div>
+    <div class="term-body">
+<pre><div class="tl"><span class="p">$ </span><span class="out">tapedeck ls</span></div>
+<div class="tl"><span class="out">RUN                           STEPS   TOKENS   COST    NOTE</span></div>
+<div class="tl"><a href="https://github.com/EAnge1o/nimbus-infer-rs" target="_blank" rel="noopener" style="color:var(--blue)">20261101-0342-nimbus-rs   </a><span class="out">      48    12.4k   $0.00   </span><span class="cmt">hand-written AVX2/FMA · int4 +85%</span></div>
+<div class="tl"><a href="https://github.com/EAnge1o/tapedeck" target="_blank" rel="noopener" style="color:var(--blue)">20261030-1740-tapedeck    </a><span class="out">      36     9.1k   $0.00   </span><span class="cmt">PyPI v0.2.0 · zero dependencies</span></div>
+<div class="tl"><a href="https://github.com/EAnge1o/mocktape" target="_blank" rel="noopener" style="color:var(--blue)">20261030-1740-mocktape    </a><span class="out">      29     7.8k   $0.00   </span><span class="cmt">npm v1.0.1 · dashboard & faults</span></div>
+<div class="tl"><a href="https://github.com/EAnge1o/mcptape" target="_blank" rel="noopener" style="color:var(--blue)">20261030-1637-mcptape     </a><span class="out">      21     5.2k   $0.00   </span><span class="cmt">PyPI v0.1.0 · MCP boundary</span></div>
+<div class="tl"><a href="https://github.com/EAnge1o/Kaggle-Google-The-Gemma-4-Developer-Agent" target="_blank" rel="noopener" style="color:var(--blue)">20261025-1138-gemma4-agent</a><span class="out">      ∞      ???   $0.00   </span><span class="warn">REC ● in progress</span></div>
+<div class="tl"><a href="https://github.com/EAnge1o/ARC-Prize-2026-ARC-AGI-3" target="_blank" rel="noopener" style="color:var(--blue)">20261025-1100-arc-agi3    </a><span class="out">      ∞      ???   $0.00   </span><span class="warn">REC ● in progress</span></div>
+<div class="tl"><span class="ok">[6 runs · 0 live calls · $0.00 spent — traces are local files you can commit]</span></div></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ================= RECENT TRANSCRIPTS (liquid: auto-updates with _posts) ================= -->
+<section class="reveal" id="posts">
+  <h2>Recent transcripts <a class="z" href="#posts">#</a></h2>
+  <p style="color:var(--muted); font-size:13.5px">博客是一盘盘已经回放过、可以再回放的带子 —— <a href="posts/">全部目录 →</a></p>
+  <div class="rack">
+    {% for post in site.posts limit:5 %}
+    <a class="spine" href="{{ post.url | relative_url }}"><span class="nm">{{ post.date | date: "%Y-%m-%d" }}</span><span class="ds">{{ post.title }}</span><span class="go">[↗]</span></a>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- ================= HOW IT WORKS ================= -->
+<section class="reveal" id="how">
+  <h2>How it works <a class="z" href="#how">#</a></h2>
+  <div class="flow">
+    <span class="node">💡 idea</span><span class="arrow">→</span>
+    <span class="node">⚙ build from scratch</span><span class="arrow">→</span>
+    <span class="node">📦 ship to PyPI / npm</span><span class="arrow">→</span>
+    <span class="node hot">⏺ REC record</span><span class="arrow">→</span>
+    <span class="node hot">▶ PLAY · $0.00</span><span class="arrow">→</span>
+    <span class="node hot">⏩ diff what drifted</span><span class="arrow">→</span>
+    <span class="node">CI ✅</span>
+  </div>
+  <p class="flow-note">同一条循环，既管 agent 的运行，也管造工具的人本身：record once, replay forever.<br>
+  <span style="color:var(--dim)">（本页没有 <code>&lt;script src&gt;</code>、没有 <code>npm install</code>、没有 dashboard —— 只有一个 <code>.html</code> 文件和一个 rAF 循环。）</span></p>
+</section>
+
+<!-- ================= TAPE SUITE ================= -->
+<section class="reveal" id="suite">
+  <h2>The tape suite <a class="z" href="#suite">#</a></h2>
+  <p style="color:var(--muted); font-size:13.5px">同一个“磁带”隐喻，钉在 agent 栈的三层边界上：</p>
+  <div class="suite">
+    <article class="tape-card">
+      <h3><span class="sym">⏺</span> <a href="https://github.com/EAnge1o/tapedeck" target="_blank" rel="noopener">tapedeck</a></h3>
+      <div class="role">FLIGHT RECORDER · AGENT 层</div>
+      <p>把一次完整运行（每个模型调用、工具调用、usage）录成<b>带版本号的 JSONL trace</b>。改完代码离线逐字节重放，<b>$0.00</b>；一条命令 diff 出第一个漂移的步骤，退出码直连 CI。</p>
+      <div class="install"><code>pip install tapedeck-llm</code><button class="copy" data-copy="pip install tapedeck-llm">copy</button></div>
+      <div class="card-tags"><span class="tag">Python</span><span class="tag">PyPI</span><span class="tag">0 deps</span><span class="tag">pytest fixture</span></div>
+    </article>
+    <article class="tape-card">
+      <h3><span class="sym">⏺</span> <a href="https://github.com/EAnge1o/mcptape" target="_blank" rel="noopener">mcptape</a></h3>
+      <div class="role">TAPE RECORDER · MCP 边界</div>
+      <p>把<b>任意 MCP server</b> 包一层：录制一次，永久离线回放，diff 出协议层漂了什么。MCP 工具调用的飞行记录仪，与 tapedeck 同一套哲学。</p>
+      <div class="install"><code>pip install mcptape</code><button class="copy" data-copy="pip install mcptape">copy</button></div>
+      <div class="card-tags"><span class="tag">Python</span><span class="tag">PyPI</span><span class="tag">0 deps</span><span class="tag">MCP</span></div>
+    </article>
+    <article class="tape-card">
+      <h3><span class="sym">⏺</span> <a href="https://github.com/EAnge1o/mocktape" target="_blank" rel="noopener">mocktape</a></h3>
+      <div class="role">MOCK SERVER · HTTP 层</div>
+      <p>一个配置文件生成<b>带状态的 CRUD API</b>；真实 API 录成可读 YAML 磁带离线回放；每个 404 给出<b>最近匹配诊断</b>；场景切换、故障注入、实时流量面板。</p>
+      <div class="install"><code>npm i -D @eange1o/mocktape</code><button class="copy" data-copy="npm i -D @eange1o/mocktape">copy</button></div>
+      <div class="card-tags"><span class="tag">TypeScript</span><span class="tag">npm</span><span class="tag">75 kB</span><span class="tag">dashboard</span></div>
+    </article>
+  </div>
+  <p class="flow-note">mocktape 管 <b>HTTP 流量</b>，tapedeck 管 <b>agent 决策</b>，mcptape 管 <b>工具协议边界</b>。如果 mock 的流程最终会调模型或 MCP server —— 三个一起用。</p>
+</section>
+
+<!-- ================= NIMBUS RACK ================= -->
+<section class="reveal" id="nimbus">
+  <h2>The nimbus rack <a class="z" href="#nimbus">#</a></h2>
+  <p style="color:var(--muted); font-size:13.5px">从零手写系列：为了不再害怕这些黑盒，把每一个都造一遍。架子上每盘都是一盘“自录磁带”：</p>
+  <div class="rack">
+    <a class="spine" href="https://github.com/EAnge1o/nimbus-infer-rs" target="_blank" rel="noopener"><span class="nm">nimbus-infer-rs</span><span class="ds">纯 std 的 Rust LLM 推理引擎 · 手写 AVX2/FMA 内核 · int4 解码吞吐 +85%</span><span class="go">[↗]</span></a>
+    <a class="spine" href="https://github.com/EAnge1o/nimbus-infer" target="_blank" rel="noopener"><span class="nm">nimbus-infer</span><span class="ds">纯 NumPy 推理引擎 · byte-level BPE · KV cache · int8/int4 量化</span><span class="go">[↗]</span></a>
+    <a class="spine" href="https://github.com/EAnge1o/nimbus-vm" target="_blank" rel="noopener"><span class="nm">nimbus-vm</span><span class="ds">字节码编译器 + mark-sweep GC 虚拟机 · Nimbus 语言</span><span class="go">[↗]</span></a>
+    <a class="spine" href="https://github.com/EAnge1o/nimbus-git" target="_blank" rel="noopener"><span class="nm">nimbus-git</span><span class="ds">Git 对象模型：objects / index / refs / Myers diff</span><span class="go">[↗]</span></a>
+    <a class="spine" href="https://github.com/EAnge1o/nimbus-db" target="_blank" rel="noopener"><span class="nm">nimbus-db</span><span class="ds">SQL 引擎：递归下降解析 · B+tree · WAL 崩溃恢复 · joins</span><span class="go">[↗]</span></a>
+    <a class="spine" href="https://github.com/EAnge1o/nimbus-kv" target="_blank" rel="noopener"><span class="nm">nimbus-kv</span><span class="ds">Raft 共识的分布式 KV 存储 · 零运行时依赖</span><span class="go">[↗]</span></a>
+    <a class="spine" href="https://github.com/EAnge1o/nimbus-chain" target="_blank" rel="noopener"><span class="nm">nimbus-chain</span><span class="ds">纯 Python 区块链 · SPV 轻客户端 · 公证机制</span><span class="go">[↗]</span></a>
+  </div>
+</section>
+
+<!-- ================= WHY NOT ================= -->
+<section class="reveal" id="why">
+  <h2>Why not a normal homepage <a class="z" href="#why">#</a></h2>
+  <div class="md table-scroll">
+    <table>
+      <thead><tr><th></th><th>这一页（本磁带）</th><th>typical personal site</th></tr></thead>
+      <tbody>
+        <tr><td>依赖</td><td class="yes">0（一个 HTML 文件）</td><td class="no">47 + 一个 bundler</td></tr>
+        <tr><td>Cookie / 追踪</td><td class="yes">❌ 一个都没有</td><td class="no">✅ 三家分析、五枚像素</td></tr>
+        <tr><td>离线可用</td><td class="yes">✅ 断网照样播</td><td class="no">❌ 白屏转圈</td></tr>
+        <tr><td>首屏</td><td class="yes">&lt; 100 ms</td><td class="no">4.2 s LCP，先看骨架屏</td></tr>
+        <tr><td>内容</td><td class="yes">真实仓库 · 真实链接 · 真实版本号</td><td class="mid">“Passionate developer”</td></tr>
+        <tr><td>view-source</td><td class="yes">鼓励，当 README 读</td><td class="no">minified regret</td></tr>
+        <tr><td>隐喻</td><td class="yes">📼 磁带：record / replay / diff</td><td class="mid">hero banner + 三栏卡片</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ================= HONEST BOUNDARIES ================= -->
+<section class="reveal" id="boundaries">
+  <h2>Honest boundaries <a class="z" href="#boundaries">#</a></h2>
+  <ul class="boundary">
+    <li><b>确定性重放只在咖啡层以下成立。</b> 日程里未定种子的随机性，可能导致实际进度与录制内容产生偏差 —— 这是一切 record/replay 工具（VCR.py、respx，以及我）共同的下边界。</li>
+    <li><b>Roadmap 会漂移，且没有 changelog。</b> 步骤随时增删；<code>diff</code> 的 exit code 2（structural drift）才是诚实信号。</li>
+    <li><b>From-scratch ≠ production-ready。</b> nimbus-* 用来理解原理，不是用来接生产流量的 —— 请勿把付款业务跑在 nimbus-chain 上。</li>
+    <li><b>不在你背后 monkeypatch。</b> 本页零 cookie、零追踪、零上报；你的“会话磁带”（如果按 REC）只存在于当前标签页内存里，刷新即抹带。</li>
+  </ul>
+</section>
+
+<!-- ================= SIDE B ================= -->
+<section class="reveal" id="side-b">
+  <h2>Side B · now playing <a class="z" href="#side-b">#</a></h2>
+  <p style="color:var(--muted); font-size:13.5px">B 面是正在录的带子 —— 按 <b>EJECT</b> 翻面过来的这里，全部 🚧：</p>
+  <div class="playing-grid">
+    <div class="np"><span class="ico">🏎️</span><div><div class="tt"><a href="https://github.com/EAnge1o/ARC-Prize-2026-ARC-AGI-3" target="_blank" rel="noopener">ARC Prize 2026 · ARC-AGI-3</a><span class="wip">REC ●</span></div><div class="ds">ARC Prize 2026 求解方案，和抽象推理死磕。</div></div></div>
+    <div class="np"><span class="ico">🍟</span><div><div class="tt"><a href="https://github.com/EAnge1o/mcd-repeat-smarter" target="_blank" rel="noopener">麦麦老样子 · McD Repeat Smarter</a><span class="wip">REC ●</span></div><div class="ds">基于麦当劳官方 MCP 的个性化点餐助手 · 麦当劳程序员创意开发大赛 · ⭐10</div></div></div>
+    <div class="np"><span class="ico">🌙</span><div><div class="tt"><a href="https://github.com/EAnge1o/midnight-oracle" target="_blank" rel="noopener">镜映心 · midnight-oracle</a><span class="wip">REC ●</span></div><div class="ds">离线「塔罗 + 答案之书」，全程 0 网络请求 · <a href="https://eange1o.github.io/midnight-oracle/" target="_blank" rel="noopener">在线体验</a></div></div></div>
+    <div class="np"><span class="ico">💄</span><div><div class="tt"><a href="https://github.com/EAnge1o/olay" target="_blank" rel="noopener">TruLens · olay</a><span class="wip">REC ●</span></div><div class="ds">面向美妆种草内容的多模态真实性核验 Agent · 欧莱雅黑客松</div></div></div>
+  </div>
+  <h3>曾经回放过的高光</h3>
+  <ul class="boundary">
+    <li><b>Kaggle Playground S6E10</b> — 航空公司满意度预测：嵌套 OOF 堆叠 + 航线特征，公开榜 AUC <b>0.96213</b>（当时 122 / 3142）</li>
+    <li><b>ARC-Bench 黑客松</b> — 自主软件工程 Agent：需求文档 + 参考图 → 可运行全栈应用（<a href="https://github.com/EAnge1o/octos-arc" target="_blank" rel="noopener">octos-arc</a>）</li>
+  </ul>
+</section>
+
+<!-- ================= ROADMAP ================= -->
+<section class="reveal" id="roadmap">
+  <h2>Roadmap <a class="z" href="#roadmap">#</a></h2>
+  <ul class="road">
+    <li class="done"><input type="checkbox" checked disabled aria-label="done"><span>磁带三件套全部发布：PyPI ×2 + npm，<code>$0.00</code> 预算内</span></li>
+    <li class="done"><input type="checkbox" checked disabled aria-label="done"><span>从零手写 LLM 推理引擎 ×2（Rust / NumPy），顺便打赢borrow checker</span></li>
+    <li class="done"><input type="checkbox" checked disabled aria-label="done"><span>数据库、Git、区块链、VM 各造一个 —— 黑盒拆完，恐惧清零</span></li>
+    <li><input type="checkbox" disabled aria-label="todo"><span>ARC Prize 2026（ARC-AGI-3）方案成型</span></li>
+    <li><input type="checkbox" disabled aria-label="todo"><span>tapedeck 1.0 —— trace 签名（防篡改哈希链）</span></li>
+    <li><input type="checkbox" disabled aria-label="todo"><span>把 blog 仓库写满 —— 飞行记录仪们的设计复盘</span></li>
+    <li><input type="checkbox" disabled aria-label="todo"><span>毕业 🎓（长期 WIP，求生欲拉满）</span></li>
+  </ul>
+</section>
+
+</main>
+
+<footer>
+  <div><a href="https://github.com/EAnge1o" target="_blank" rel="noopener">github.com/EAnge1o</a> · <a href="posts/">blog transcripts</a> · <a href="https://github.com/EAnge1o/blog" target="_blank" rel="noopener">repo</a> · <a href="#deck">⏮ rewind to top</a></div>
+  <div>MIT © E'Angelo · 📼 no cookies · no analytics · no uploads — view-source friendly</div>
+  <div class="keys"><kbd>space</kbd> play / stop · <kbd>r</kbd> rec · <kbd>e</kbd> eject · 播到带尾自动翻面</div>
+</footer>
+
+</div><!-- /wrap -->
+
+<!-- rec panel -->
+<aside id="rec-panel" aria-live="polite">
+  <div class="rp-head"><span class="rd"></span> REC — session tape <span class="note">0 B uploaded · stays in this tab</span></div>
+  <div id="rec-log"></div>
+</aside>
+
+<div id="toast" role="status"></div>
+
+<script>
+(function(){
+"use strict";
+var $ = function(s){ return document.querySelector(s) };
+var $$ = function(s){ return Array.prototype.slice.call(document.querySelectorAll(s)) };
+var RM = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+var body = document.body;
+body.classList.remove('off');
+
+/* ---------- toast ---------- */
+var toastEl = $('#toast'), toastT = null;
+function toast(msg){
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastT);
+  toastT = setTimeout(function(){ toastEl.classList.remove('show'); }, 2400);
+}
+
+/* ---------- scroll progress + counter ---------- */
+var counterEl = $('#counter'), counterBox = $('#counterBox'), tapeLine = $('#tape-line');
+function pad4(n){ n = ((n % 10000) + 10000) % 10000; return ('0000' + n).slice(-4); }
+function onScroll(){
+  var max = document.documentElement.scrollHeight - window.innerHeight;
+  var y = window.scrollY || 0;
+  tapeLine.style.width = (max > 0 ? (y / max) * 100 : 0) + '%';
+  counterEl.textContent = pad4(Math.floor(y / 5));
+}
+window.addEventListener('scroll', onScroll, { passive:true });
+onScroll();
+
+/* ---------- VU meters ---------- */
+var SEGS = 14;
+function buildVu(el, ch){
+  for (var i = 0; i < SEGS; i++){
+    var s = document.createElement('i');
+    el.appendChild(s);
+  }
+  var c = document.createElement('span');
+  c.className = 'ch'; c.textContent = ch;
+  el.appendChild(c);
+}
+var vuL = $('#vuL'), vuR = $('#vuR');
+buildVu(vuL, 'L'); buildVu(vuR, 'R');
+var lv = [0, 0], vel = [0, 0];
+function vuStep(){
+  var active = body.classList.contains('playing') || body.classList.contains('recording');
+  var chans = [vuL.children, vuR.children];
+  for (var c = 0; c < 2; c++){
+    if (active && !RM){
+      vel[c] += (Math.random() - 0.48) * 3.2;
+      vel[c] *= 0.9;
+      if (vel[c] > 2.2) vel[c] = 2.2;
+      lv[c] += vel[c];
+    } else {
+      lv[c] -= 0.6;
+    }
+    lv[c] = Math.max(0, Math.min(SEGS, lv[c]));
+    for (var i = 0; i < SEGS; i++){
+      var seg = chans[c][i];
+      var on = i < Math.round(lv[c]);
+      seg.className = on ? ('on' + (i >= 12 ? ' hot' : i >= 9 ? ' mid' : '')) : '';
+    }
+  }
+}
+if (!RM) (function vuLoop(){ vuStep(); requestAnimationFrame(vuLoop); })();
+
+/* ---------- tape winding ---------- */
+var tapeL = $('#tapeL'), tapeR = $('#tapeR');
+var rL = 42, rR = 42;
+setInterval(function(){
+  if (mode === 'stop' || RM) return;
+  var d = mode === 'rew' ? -1.1 : mode === 'ff' ? 2.4 : 0.5;
+  rL += d; rR -= d;
+  if (rL > 56){ rL = 56; rR = 26; }
+  if (rL < 26){ rL = 26; rR = 56; }
+  tapeL.setAttribute('r', rL.toFixed(1));
+  tapeR.setAttribute('r', rR.toFixed(1));
+}, 90);
+
+/* ---------- transport ---------- */
+var mode = 'stop';
+var SPEED = { play: 0.9, ff: 16, rew: -20 };
+var raf = null;
+var htmlEl = document.documentElement;
+function setMode(m){
+  if (m === mode && m !== 'stop') { return; }
+  var wasMode = mode;
+  mode = m;
+  $$('.tbtn').forEach(function(b){
+    var dm = b.getAttribute('data-mode');
+    b.classList.toggle('active', dm === m && m !== 'stop' && m !== 'rec');
+    if (dm && dm !== 'rec') b.setAttribute('aria-pressed', dm === m ? 'true' : 'false');
+  });
+  body.classList.toggle('playing', m !== 'stop');
+  body.classList.toggle('mode-ff', m === 'ff');
+  body.classList.toggle('mode-rew', m === 'rew');
+  if (m !== 'stop'){
+    htmlEl.style.scrollBehavior = 'auto';
+    if (!raf) raf = requestAnimationFrame(tapeLoop);
+  } else {
+    htmlEl.style.scrollBehavior = '';
+    if (raf){ cancelAnimationFrame(raf); raf = null; }
+  }
+}
+function tapeLoop(){
+  if (mode === 'stop'){ raf = null; return; }
+  var max = document.documentElement.scrollHeight - window.innerHeight;
+  var y = window.scrollY;
+  window.scrollBy(0, SPEED[mode] || 0);
+  if (mode !== 'rew' && y >= max - 1){ endOfSide(); return; }
+  if (mode === 'rew' && y <= 0){ setMode('stop'); toast('◀◀ top of tape'); return; }
+  raf = requestAnimationFrame(tapeLoop);
+}
+var sideB = false;
+function endOfSide(){
+  setMode('stop');
+  counterBox.classList.add('blink');
+  setTimeout(function(){ counterBox.classList.remove('blink'); }, 2200);
+  if (!sideB){
+    toast('END OF SIDE A — ejecting to Side B …');
+    setTimeout(function(){
+      eject(true);
+      window.scrollTo(0, 0);
+      setTimeout(function(){ setMode('play'); }, 900);
+    }, 1100);
+  } else {
+    toast('END OF TAPE — 感谢收听 📼');
+  }
+}
+$$('.tbtn').forEach(function(b){
+  b.addEventListener('click', function(){
+    var m = b.getAttribute('data-mode');
+    if (m === 'rec'){ toggleRec(); return; }
+    if (m === 'stop'){ setMode('stop'); return; }
+    setMode(m);
+  });
+});
+$('#eject').addEventListener('click', function(){ eject(false); });
+
+/* ---------- eject / side flip ---------- */
+var cassette = $('#cassette');
+function eject(silent){
+  sideB = !sideB;
+  body.classList.toggle('side-b', sideB);
+  var flip = function(){
+    $('#sideDot').textContent = sideB ? 'B' : 'A';
+    $('#sideBadge').textContent = sideB ? 'B' : 'A';
+    $('#lblSub').textContent = sideB
+      ? 'now playing · works in progress · honest boundaries'
+      : 'record once · replay forever · diff what drifted';
+  };
+  if (RM){ flip(); }
+  else {
+    cassette.style.transform = 'rotateY(90deg)';
+    setTimeout(function(){ flip(); cassette.style.transform = 'rotateY(0deg)'; }, 280);
+  }
+  if (!silent){
+    toast(sideB ? '⏏ Side B — now playing' : '⏏ Side A — the tape suite');
+    var target = sideB ? '#side-b' : '#deck';
+    var el = $(target);
+    if (el) el.scrollIntoView({ behavior: RM ? 'auto' : 'smooth' });
+  }
+}
+
+/* ---------- REC session tape ---------- */
+var recording = false, recT0 = 0, lastMove = 0, evCount = 0;
+var recPanel = $('#rec-panel'), recLog = $('#rec-log'), recBtn = $('button[data-mode=rec]');
+function fmtRec(){
+  var s = Math.floor((Date.now() - recT0) / 1000);
+  var m = Math.floor(s / 60); s = s % 60;
+  return ('0' + m).slice(-2) + ':' + ('0' + s).slice(-2);
+}
+function recLogLine(text){
+  var d = document.createElement('div');
+  d.textContent = text;
+  recLog.appendChild(d);
+  while (recLog.children.length > 9) recLog.removeChild(recLog.firstChild);
+  recLog.scrollTop = recLog.scrollHeight;
+}
+function toggleRec(){
+  recording = !recording;
+  body.classList.toggle('recording', recording);
+  recBtn.classList.toggle('rec-arm', recording);
+  recBtn.setAttribute('aria-pressed', recording ? 'true' : 'false');
+  recPanel.classList.toggle('show', recording);
+  if (recording){
+    recT0 = Date.now(); evCount = 0;
+    recLog.innerHTML = '';
+    recLogLine('[' + fmtRec() + '] tape loaded — REC ●');
+    recLogLine('[--] nothing leaves this tab. refresh = erase.');
+  } else {
+    recLogLine('[stopped] ' + evCount + ' events captured → /dev/null 📼');
+    setMode('stop');
+  }
+}
+window.addEventListener('mousemove', function(e){
+  if (!recording) return;
+  var now = Date.now();
+  if (now - lastMove < 1200) return;
+  lastMove = now; evCount++;
+  recLogLine('[rec ' + fmtRec() + '] pointer ' + e.clientX + ',' + e.clientY);
+}, { passive:true });
+var seen = {};
+var secObs = new IntersectionObserver(function(entries){
+  entries.forEach(function(en){
+    if (en.isIntersecting && recording && !seen[en.target.id]){
+      seen[en.target.id] = true; evCount++;
+      recLogLine('[rec ' + fmtRec() + '] enter #' + (en.target.id || '?'));
+    }
+  });
+}, { threshold: 0.25 });
+$$('section[id]').forEach(function(s){ secObs.observe(s); });
+
+/* ---------- reveal on scroll ---------- */
+var revObs = new IntersectionObserver(function(entries){
+  entries.forEach(function(en){
+    if (en.isIntersecting){ en.target.classList.add('in'); revObs.unobserve(en.target); }
+  });
+}, { threshold: 0.08 });
+$$('.reveal').forEach(function(el){ revObs.observe(el); });
+
+/* ---------- typewriter ---------- */
+function typeSpan(span){
+  return new Promise(function(res){
+    var text = span.getAttribute('data-text');
+    span.classList.add('typing');
+    var i = 0;
+    (function tick(){
+      if (i >= text.length){ span.classList.remove('typing'); return res(); }
+      span.textContent += text.charAt(i++);
+      setTimeout(tick, 10 + Math.random() * 26);
+    })();
+  });
+}
+function typeLine(line){
+  var spans = line.querySelectorAll('[data-text]');
+  var p = Promise.resolve();
+  spans.forEach(function(s){ p = p.then(function(){ return typeSpan(s); }); });
+  return p.then(function(){ line.classList.add('done'); });
+}
+function typeTerm(term){
+  var lines = term.querySelectorAll('.tl');
+  var p = Promise.resolve();
+  lines.forEach(function(l){ p = p.then(function(){ return typeLine(l); }); });
+  return p;
+}
+if (RM){
+  $$('.tl [data-text]').forEach(function(s){ s.textContent = s.getAttribute('data-text'); });
+  $$('.tl').forEach(function(l){ l.classList.add('done'); });
+} else {
+  setTimeout(function(){ typeTerm($('#term-hero')); }, 400);
+  var quickObs = new IntersectionObserver(function(entries){
+    entries.forEach(function(en){
+      if (en.isIntersecting){ typeTerm($('#term-quick')); quickObs.disconnect(); }
+    });
+  }, { threshold: 0.3 });
+  quickObs.observe($('#term-quick'));
+}
+
+/* ---------- uptime ---------- */
+var t0 = Date.now(), upEl = $('#uptime');
+setInterval(function(){
+  var s = Math.floor((Date.now() - t0) / 1000);
+  var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  var p2 = function(n){ return ('0' + n).slice(-2); };
+  upEl.textContent = p2(h) + ':' + p2(m) + ':' + p2(sec);
+}, 1000);
+
+/* ---------- copy ---------- */
+$$('.copy').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    var text = btn.getAttribute('data-copy');
+    function ok(){
+      btn.textContent = 'copied ✓'; btn.classList.add('ok');
+      setTimeout(function(){ btn.textContent = 'copy'; btn.classList.remove('ok'); }, 1400);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(ok, function(){ fallback(); });
+    } else { fallback(); }
+    function fallback(){
+      var ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); ok(); } catch(e){}
+      document.body.removeChild(ta);
+    }
+  });
+});
+
+/* ---------- keyboard ---------- */
+window.addEventListener('keydown', function(e){
+  var tag = (e.target && e.target.tagName) || '';
+  if (/INPUT|TEXTAREA|SELECT|BUTTON/.test(tag)) return;
+  if (e.code === 'Space'){
+    e.preventDefault();
+    if (mode === 'stop') setMode('play'); else setMode('stop');
+  } else if (e.key === 'r' || e.key === 'R'){
+    toggleRec();
+  } else if (e.key === 'e' || e.key === 'E'){
+    eject(false);
+  }
+});
+
+})();
+</script>
+</body>
+</html>

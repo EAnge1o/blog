@@ -1,0 +1,74 @@
+---
+---
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transcripts · E'Angelo 📼</title>
+<meta name="description" content="All blog transcripts of E'Angelo — flight recorders, from-scratch engines, and other tools.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📼</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0a0d; --panel:#121218; --panel2:#17171f; --border:#26262e; --border2:#33333f;
+  --text:#d8d8e0; --muted:#8f8f9d; --dim:#5f5f6b;
+  --amber:#ffb454; --green:#7ee787; --blue:#79c0ff;
+  --mono:"JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
+}
+*{ box-sizing:border-box }
+html{ scroll-behavior:smooth }
+body{ margin:0; background:var(--bg); color:var(--text); font-family:var(--mono); font-size:15px; line-height:1.65 }
+body::after{ content:""; position:fixed; inset:0; pointer-events:none; z-index:60;
+  background:repeating-linear-gradient(to bottom, rgba(255,255,255,.022) 0 1px, transparent 1px 3px); mix-blend-mode:overlay }
+::selection{ background:var(--amber); color:#111 }
+a{ color:var(--blue); text-decoration:none; border-bottom:1px dotted rgba(121,192,255,.4) }
+a:hover{ border-bottom-color:currentColor }
+#tape-line{ position:fixed; top:0; left:0; height:3px; width:100%; z-index:70;
+  background:linear-gradient(90deg, #3a2a18, var(--amber)); box-shadow:0 0 8px rgba(255,180,84,.5) }
+.wrap{ max-width:880px; margin:0 auto; padding:0 20px }
+header{ padding:56px 0 18px }
+h1{ font-size:20px; font-weight:700; margin:0 0 6px }
+h1::before{ content:"# "; color:var(--dim); font-weight:400 }
+.sub{ color:var(--muted); font-size:13.5px }
+.rack{ border:1px solid var(--border); border-radius:10px; overflow:hidden; margin:26px 0 }
+.spine{ display:flex; align-items:center; gap:14px; padding:13px 16px; border-bottom:1px solid var(--border);
+  background:var(--panel); color:var(--text); transition:background .15s, transform .15s }
+.spine:last-child{ border-bottom:none }
+.spine:hover{ background:var(--panel2); transform:translateX(4px) }
+.spine::before{ content:""; width:6px; height:26px; border-radius:2px; background:var(--amber); opacity:.75; flex:none }
+.spine .nm{ font-weight:700; font-size:13px; color:var(--dim); min-width:96px }
+.spine .ds{ color:var(--muted); font-size:13px; flex:1; line-height:1.6 }
+.spine .ds b{ color:var(--text); font-weight:500 }
+.spine .go{ color:var(--dim); font-size:12px }
+.spine:hover .go{ color:var(--amber) }
+@media (max-width:640px){ .spine{ flex-wrap:wrap; gap:6px } .spine .nm{ min-width:0 } }
+footer{ margin:70px 0 60px; text-align:center; color:var(--dim); font-size:12.5px }
+</style>
+</head>
+<body>
+<div id="tape-line"></div>
+<div class="wrap">
+  <header>
+    <h1>Transcript archive</h1>
+    <p class="sub">一盘盘已经回放过的带子 —— 飞行记录仪、从零手写的引擎，以及其他工具。<a href="{{ '/' | relative_url }}">⏮ back to the deck</a></p>
+  </header>
+
+  <div class="rack">
+    {% for post in site.posts %}
+    <a class="spine" href="{{ post.url | relative_url }}">
+      <span class="nm">{{ post.date | date: "%Y-%m-%d" }}</span>
+      <span class="ds"><b>{{ post.title }}</b>{% if post.excerpt %} — {{ post.excerpt | strip_html | strip_newlines | truncate: 110 }}{% endif %}</span>
+      <span class="go">[↗]</span>
+    </a>
+    {% else %}
+    <div class="spine"><span class="nm">——</span><span class="ds">带子还在录制中（REC ●），还没有回放件。</span><span class="go"></span></div>
+    {% endfor %}
+  </div>
+
+  <footer>MIT © E'Angelo · 📼 no cookies · no analytics · view-source friendly</footer>
+</div>
+</body>
+</html>
